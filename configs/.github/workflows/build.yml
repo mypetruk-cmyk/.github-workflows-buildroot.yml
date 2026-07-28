@@ -1,0 +1,40 @@
+name: Build x86_64 Linux Distro
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sed make binutils build-essential gcc g++ bash patch gzip bzip2 perl tar cpio unzip rsync bc wget git libncurses-dev
+
+      - name: Download Buildroot 2024.02
+      run: |
+        wget https://buildroot.org/downloads/buildroot-2024.02.tar.gz
+        tar xf buildroot-2024.02.tar.gz
+        mv buildroot-2024.02 buildroot
+
+      - name: Copy Custom Configuration
+        run: |
+          mkdir -p buildroot_src/configs
+          cp configs/my_x86_64_defconfig buildroot/configs/
+
+      - name: Build Distribution
+        run: |
+          cd buildroot_src
+          make my_x86_64_defconfig
+          make
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-linux-images
+          path: buildroot_src/output/images/
