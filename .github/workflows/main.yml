@@ -14,13 +14,12 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y sed make binutils build-essential gcc g++ bash patch gzip bzip2 perl tar cpio unzip rsync bc wget git libncurses-dev
-
+          sudo apt install build-essential binutils rsync wget libncurses-dev libelf-dev libssl-dev
       - name: Download Buildroot 2024.02
         run: |
-         wget https://buildroot.org/downloads/buildroot-2024.02.tar.gz
-         tar xf buildroot-2024.02.tar.gz
-         mv buildroot-2024.02 buildroot
+         wget https://buildroot.org/downloads/buildroot-2025.02.3.tar.gz  
+          tar -xf buildroot-2025.02.3.tar.gz  
+           cd buildroot-2025.02.3
 
       - name: Copy Custom Configuration
         run: |
