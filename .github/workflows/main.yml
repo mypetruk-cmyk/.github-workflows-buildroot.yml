@@ -26,7 +26,7 @@ jobs:
 
       - name: Custom Configuration
         run: |
-          make pc_x86_64_bios_defconfig
+          make x86_64_defconfig
           
       - name: Build Distribution
         working-directory: buildroot
