@@ -1,40 +1,55 @@
-name: Build x86_64 Linux Distro
+name: Build Linux OS untuk Laptop 2014
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
+  workflow_dispatch: # Tombol manual jalankan build di web GitHub
 
 jobs:
-  build:
-    runs-on: ubuntu-slim
-    timeout-minutes: 360 # biar gak 6 jam mati
+  build-os:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt install build-essential binutils rsync wget libncurses-dev libelf-dev libssl-dev
+    - name: Install Buildroot Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses-dev file rsync \
+          bc wget cpio unzip graphviz python3 libssl-dev
 
-      - name: Download Buildroot 2025.02.3
-        run: |
-          wget https://buildroot.org/downloads/buildroot-2025.02.3.tar.gz
-          tar -xf buildroot-2025.02.3.tar.gz
-          mv buildroot-2025.02.3 buildroot # <-- KUNCI NYA INI
+    - name: Clone Buildroot
+      run: |
+        git clone https://github.com --depth=1 $HOME/buildroot
 
-      - name: Custom Configuration
-        run: |
-          make x86_64_defconfig
-          
-      - name: Build Distribution
-        working-directory: buildroot
-        run: |
-          make -j$(nproc) # pake semua core biar cepet
+    - name: Setup Compiler Cache (ccache)
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: ccache-${{ runner.os }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ runner.os }}-
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: x86_64-linux-images
-          path: buildroot/output/images/
+    - name: Configure Buildroot
+      run: |
+        cd $HOME/buildroot
+        # Menggunakan template PC Generic 64-bit untuk laptop/komputer x86_64
+        make pc_x86_64_bios_defconfig
+        
+        # Mengaktifkan CCACHE otomatis lewat script agar build berikutnya cepat
+        echo "BR2_CCACHE=y" >> .config
+        echo "BR2_CCACHE_DIR=\"${{ github.workspace }}/.ccache\"" >> .config
+
+    - name: Compile Operating System
+      run: |
+        cd $HOME/buildroot
+        make -j$(nproc)
+
+    - name: Upload Bootable Image Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: laptop-2014-linux-os
+        path: |
+          ${{ home }}/buildroot/output/images/sdcard.img
+          ${{ home }}/buildroot/output/images/bzImage
