@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 360 # biar gak 6 jam mati
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -14,23 +16,23 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt install build-essential binutils rsync wget libncurses-dev libelf-dev libssl-dev
-      - name: Download Buildroot 2024.02
+          sudo apt-get install -y build-essential binutils rsync wget libncurses-dev libelf-dev libssl-dev pkg-config cpio unzip bc
+
+      - name: Download Buildroot 2025.02.3
         run: |
-         wget https://buildroot.org/downloads/buildroot-2025.02.3.tar.gz  
-          tar -xf buildroot-2025.02.3.tar.gz  
-           cd buildroot-2025.02.3
+          wget https://buildroot.org/downloads/buildroot-2025.02.3.tar.gz
+          tar -xf buildroot-2025.02.3.tar.gz
+          mv buildroot-2025.02.3 buildroot # <-- KUNCI NYA INI
 
       - name: Copy Custom Configuration
         run: |
-          mkdir -p buildroot_src/configs
           cp configs/my_x86_64_defconfig buildroot/configs/
 
       - name: Build Distribution
+        working-directory: buildroot
         run: |
-          cd buildroot
           make my_x86_64_defconfig
-          make
+          make -j$(nproc) # pake semua core biar cepet
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
