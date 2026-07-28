@@ -1,0 +1,79 @@
+name: Build Linux OS + GUI Ringan untuk Laptop 2014
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-os:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Buildroot Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses-dev file rsync \
+          bc wget cpio unzip graphviz python3 libssl-dev
+
+    - name: Clone Buildroot
+      run: |
+         wget https://buildroot.org/downloads/buildroot-2024.02.tar.gz
+        wget https://buildroot.org/downloads/buildroot-2024.02.tar.gz
+        tar xf buildroot-2024.02.tar.gz
+        mv buildroot-2024.02 $HOME/buildroot
+
+    - name: Setup Compiler Cache (ccache)
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.ccache
+        key: ccache-${{ runner.os }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ runner.os }}-
+
+    - name: Configure Buildroot dengan Tampilan GUI
+      run: |
+        cd $HOME/buildroot
+        # Gunakan base template PC Generic 64-bit
+        make pc_x86_64_bios_defconfig
+        
+        # 1. Aktifkan CCACHE agar build cepat
+        echo "BR2_CCACHE=y" >> .config
+        echo "BR2_CCACHE_DIR=\"${{ github.workspace }}/.ccache\"" >> .config
+        
+        # 2. Aktifkan X11 Server (Sistem Grafik Dasar)
+        echo "BR2_PACKAGE_XSERVER_XORG_SERVER=y" >> .config
+        echo "BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y" >> .config
+        echo "BR2_PACKAGE_XAPP_XINIT=y" >> .config
+        
+        # 3. Aktifkan Driver Grafis Laptop 2014 (Intel & AMD Generic)
+        echo "BR2_PACKAGE_XDRIVER_XF86_VIDEO_INTEL=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_VIDEO_ATI=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_INPUT_KEYBOARD=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_INPUT_MOUSE=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_INPUT_SYNAPTICS=y" >> .config # Untuk Touchpad Laptop
+        
+        # 4. Aktifkan Openbox (Desktop/Window Manager Ringan)
+        echo "BR2_PACKAGE_OPENBOX=y" >> .config
+        
+        # 5. Tambahkan Terminal di dalam Desktop agar bisa ngetik perintah
+        echo "BR2_PACKAGE_RXVT_UNICODE=y" >> .config
+        
+        # Terapkan perubahan dan rapikan dependensi otomatis
+        make olddefconfig
+
+    - name: Compile Operating System
+      run: |
+        cd $HOME/buildroot
+        make -j$(nproc)
+
+    - name: Upload Bootable Image Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: laptop-2014-gui-os
+        path: |
+          ${{ home }}/buildroot/output/images/sdcard.img
