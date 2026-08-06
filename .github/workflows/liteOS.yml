@@ -1,0 +1,101 @@
+name: Build Minimal x86 Linux OS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+     - name: Checkout Repository
+       uses: actions/checkout@v4
+
+     - name: Install dependencies
+       run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git wget cpio unzip rsync bc file \
+        libncurses-dev libssl-dev libelf-dev python3 \
+        ccache sed make binutils gcc g++ bash patch gzip bzip2 perl \
+        tar xz-utils diffutils findutils util-linux \
+        libtool automake autoconf pkg-config \
+        mtools dosfstools genisoimage
+     - name: Clone Buildroot
+       run: |
+        git clone --depth 1 --branch 2024.02.x https://github.com/buildroot/buildroot.git
+     - name: Configure Buildroot for x86 with GUI and ccache
+       run: |
+        cd buildroot
+        make qemu_x86_64_defconfig
+        
+        # Config dasar buat bootable disk
+        echo "BR2_TARGET_ROOTFS_TAR=y" >> .config
+        echo "BR2_TARGET_ROOTFS_EXT2=y" >> .config
+        echo "BR2_TARGET_ROOTFS_EXT2_SIZE=\"512M\"" >> .config
+        echo "BR2_TARGET_GRUB2=y" >> .config
+        echo "BR2_TARGET_GRUB2_BOOT_PARTITION=y" >> .config
+    
+        # SOLUSI: Mengaktifkan libglib2 dan dependensi wajib GUI
+        echo "BR2_PACKAGE_LIBGLIB2=y" >> .config
+        echo "BR2_PACKAGE_FONTCONFIG=y" >> .config
+        echo "BR2_PACKAGE_XLIB_LIBX11=y" >> .config
+        echo "BR2_PACKAGE_OPKG=y" >> .config
+
+        # Config GUI asal
+        echo "BR2_PACKAGE_XORG7=y" >> .config
+        echo "BR2_PACKAGE_XSERVER_XORG_SERVER=y" >> .config
+        echo "BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_VIDEO_VESA=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_INPUT_LIBINPUT=y" >> .config
+        echo "BR2_PACKAGE_OPENBOX=y" >> .config
+        echo "BR2_PACKAGE_XTERM=y" >> .config
+       
+        # AKTIFKAN CCACHE DI BUILDROOT
+        echo "BR2_CCACHE=y" >> .config
+        echo "BR2_CCACHE_DIR=\"\$(HOME)/.buildroot-ccache\"" >> .config
+        echo "BR2_CCACHE_INITIAL_SETUP=\"\"" >> .config
+        
+        make olddefconfig
+
+       
+        # AKTIFKAN CCACHE DI BUILDROOT
+        echo "BR2_CCACHE=y" >> .config
+        echo "BR2_CCACHE_DIR=\"\$(HOME)/.buildroot-ccache\"" >> .config
+        echo "BR2_CCACHE_INITIAL_SETUP=\"\"" >> .config
+        
+     - name: Build Operating System
+       run: |
+        cd buildroot
+        # Use available CPU cores for faster compilation
+        make 
+         # Masukkan langkah ini TEPAT SETELAH langkah "Build System" selesai
+     - name: Create Bootable Disk Image using Genimage
+       run: |
+        # 1. Instal utilitas genimage di runner GitHub Actions
+        sudo apt-get install -y genimage
+        # 2. Buat konfigurasi partisi disk untuk GRUB dan Rootfs
+        cat << 'EOF' > genimage.cfg
+        image disk.img {
+            hdimage {
+            }
+            partition boot {
+                in-partition-table = "no"
+                image = "buildroot/output/images/bzImage"
+                offset = 0
+            }
+            partition rootfs {
+                partition-type = 0x83
+                image = "buildroot/output/images/rootfs.ext2"
+            }
+        }
+        EOF
+        # 3. Jalankan genimage untuk menyatukan kedua berkas tersebut
+        genimage --config genimage.cfg --outputpath .
+        # Perbarui langkah unggah artifact Anda agar mengambil berkas disk.img yang baru dibuat
+     - name: Upload Combined Disk Image
+       uses: actions/upload-artifact@v4
+       with:
+        name: Linux-X86-Bootable-Disk
+        path: disk.img
+        retention-days: 14
