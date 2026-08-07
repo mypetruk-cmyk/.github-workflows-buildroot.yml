@@ -1,48 +1,104 @@
-name: Build Linux OS untuk Laptop 20
+
+name: Build Minimal x86 Linux OS
+
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch: # Tombol manual jalankan build di web GitHub
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  build-os:
+  build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+     - name: Checkout Repository
+       uses: actions/checkout@v4
 
-    - name: Install Buildroot Dependencies
-      run: |
+     - name: Install dependencies
+       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libncurses-dev file rsync \
-          bc wget cpio unzip graphviz python3 libssl-dev
-    - name: Clone Buildroot
-      run: |
-        git clone https://github.com --depth=1 $HOME/buildroot
-    - name: Setup Compiler Cache (ccache)
-      uses: actions/cache@v4
-      with:
-        path: ${{ github.workspace }}/.ccache
-        key: ccache-${{ runner.os }}-${{ github.sha }}
-        restore-keys: |
-          ccache-${{ runner.os }}-
-    - name: Configure Buildroot
-      run: |
-        cd $HOME/buildroot
-        # Menggunakan template PC Generic 64-bit untuk laptop/komputer x86_64
-        make pc_x86_64_bios_defconfig
+        sudo apt-get install -y build-essential git wget cpio unzip rsync bc file \
+        libncurses-dev libssl-dev libelf-dev python3 \
+        ccache sed make binutils gcc g++ bash patch gzip bzip2 perl \
+        tar xz-utils diffutils findutils util-linux \
+        libtool automake autoconf pkg-config \
+        mtools dosfstools genisoimage
+     - name: Clone Buildroot
+       run: |
+        git clone --depth 1 --branch 2024.02.x https://github.com/buildroot/buildroot.git
+     - name: Configure Buildroot for x86 with GUI and ccache
+       run: |
+        cd buildroot
+        make qemu_x86_64_defconfig
         
-        # Mengaktifkan CCACHE otomatis lewat script agar build berikutnya cepat
+        # Config dasar buat bootable disk
+        echo "BR2_TARGET_ROOTFS_TAR=y" >> .config
+        echo "BR2_TARGET_ROOTFS_EXT2=y" >> .config
+        echo "BR2_TARGET_ROOTFS_EXT2_SIZE=\"512M\"" >> .config
+        echo "BR2_TARGET_GRUB2=y" >> .config
+        echo "BR2_TARGET_GRUB2_BOOT_PARTITION=y" >> .config
+    
+        # SOLUSI: Mengaktifkan libglib2 dan dependensi wajib GUI
+        echo "BR2_PACKAGE_LIBGLIB2=y" >> .config
+        echo "BR2_PACKAGE_FONTCONFIG=y" >> .config
+        echo "BR2_PACKAGE_XLIB_LIBX11=y" >> .config
+        echo "BR2_PACKAGE_OPKG=y" >> .config
+
+        # Config GUI asal
+        echo "BR2_PACKAGE_XORG7=y" >> .config
+        echo "BR2_PACKAGE_XSERVER_XORG_SERVER=y" >> .config
+        echo "BR2_PACKAGE_XSERVER_XORG_SERVER_MODULAR=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_VIDEO_VESA=y" >> .config
+        echo "BR2_PACKAGE_XDRIVER_XF86_INPUT_LIBINPUT=y" >> .config
+        echo "BR2_PACKAGE_OPENBOX=y" >> .config
+        echo "BR2_PACKAGE_XTERM=y" >> .config
+       
+        # AKTIFKAN CCACHE DI BUILDROOT
         echo "BR2_CCACHE=y" >> .config
-        echo "BR2_CCACHE_DIR=\"${{ github.workspace }}/.ccache\"" >> .config
-    - name: Compile Operating System
-      run: |
-        cd $HOME/buildroot
-        make -j$(nproc)
-    - name: Upload Bootable Image Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: laptop-2014-linux-os
-        path: $HOME/buildroot/output/images/sdcard.img
-           
+        echo "BR2_CCACHE_DIR=\"\$(HOME)/.buildroot-ccache\"" >> .config
+        echo "BR2_CCACHE_INITIAL_SETUP=\"\"" >> .config
+        
+        make olddefconfig
+
+       
+        # AKTIFKAN CCACHE DI BUILDROOT
+        echo "BR2_CCACHE=y" >> .config
+        echo "BR2_CCACHE_DIR=\"\$(HOME)/.buildroot-ccache\"" >> .config
+        echo "BR2_CCACHE_INITIAL_SETUP=\"\"" >> .config
+        
+     - name: Build Operating System
+       run: |
+        cd buildroot
+        # Use available CPU cores for faster compilation
+        make 
+         # Masukkan langkah ini TEPAT SETELAH langkah "Build System" selesai
+     - name: Create Bootable Disk Image using Genimage
+       run: |
+        # 1. Instal utilitas genimage di runner GitHub Actions
+        sudo apt-get install -y genimage
+
+        # 2. Buat konfigurasi partisi disk menggunakan path relatif yang benar
+        cat << 'EOF' > genimage.cfg
+        image disk.img {
+            hdimage {
+            }
+            partition boot {
+                in-partition-table = "no"
+                image = "bzImage"
+                offset = 0
+            }
+            partition rootfs {
+                partition-type = 0x83
+                image = "rootfs.ext2"
+            }
+        }
+        EOF
+
+        # 3. Jalankan genimage dengan mengarahkan inputpath langsung ke output images Buildroot
+        genimage --config genimage.cfg --inputpath buildroot/output/images --outputpath .
+    
+     - name: upload artifak
+       uses: actions/upload-artifact@v4
+       with:
+        name: Linux-X86-Bootable-Disk
+        path: disk.img
+        retention-days: 14
